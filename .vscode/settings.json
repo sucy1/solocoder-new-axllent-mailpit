@@ -1,0 +1,40 @@
+{
+    "[vue]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "cSpell.words": [
+        "AUTHCRAMMD",
+        "AUTHLOGIN",
+        "AUTHPLAIN",
+        "bordercolor",
+        "CRAMMD",
+        "dateparse",
+        "EHLO",
+        "ESMTP",
+        "EXPN",
+        "gofmt",
+        "Healthz",
+        "HTTPIP",
+        "Inlines",
+        "jhillyerd",
+        "leporo",
+        "lithammer",
+        "livez",
+        "Mechs",
+        "navhtml",
+        "neostandard",
+        "nolint",
+        "popperjs",
+        "readyz",
+        "RSET",
+        "shortuuid",
+        "SMTPTLS",
+        "swaggerexpert",
+        "UITLS",
+        "VRFY",
+        "writef"
+    ]
+}
