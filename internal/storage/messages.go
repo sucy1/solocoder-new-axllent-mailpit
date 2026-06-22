@@ -73,6 +73,9 @@ func Store(body *[]byte, username *string) (string, error) {
 	// generate the search text
 	searchText := createSearchText(env)
 
+	// calculate DKIM verification status once at storage time
+	dkimResult := dkim.Verify(*body)
+
 	// generate unique ID
 	id := shortuuid.New()
 
@@ -99,13 +102,13 @@ func Store(body *[]byte, username *string) (string, error) {
 	snippet := tools.CreateSnippet(env.Text, env.HTML)
 
 	sql := fmt.Sprintf(`INSERT INTO %s 
-    	(Created, ID, MessageID, Subject, Metadata, Size, Inline, Attachments, SearchText, Read, Snippet) 
-	    VALUES(?,?,?,?,?,?,?,?,?,0,?)`,
+    	(Created, ID, MessageID, Subject, Metadata, Size, Inline, Attachments, SearchText, Read, Snippet, DKIMStatus) 
+	    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 		tenant("mailbox"),
 	) // #nosec
 
 	// insert mail summary data
-	_, err = tx.Exec(sql, created.UnixMilli(), id, messageID, subject, string(summaryJSON), size, inline, attachments, searchText, snippet)
+	_, err = tx.Exec(sql, created.UnixMilli(), id, messageID, subject, string(summaryJSON), size, inline, attachments, searchText, snippet, dkimResult.Status)
 	if err != nil {
 		return "", err
 	}
@@ -351,23 +354,39 @@ func GetMessage(id string) (*Message, error) {
 		returnPath = from.Address
 	}
 
+	var dkimStatus string
+
 	date, err := env.Date()
 	if err != nil {
 		// return received datetime when message does not contain a date header
 		q := sqlf.From(tenant("mailbox")).
-			Select(`Created`).
+			Select(`Created, DKIMStatus`).
 			Where(`ID = ?`, id)
 
 		if err := q.QueryAndClose(context.TODO(), db, func(row *sql.Rows) {
 			var created float64 // use float64 for rqlite compatibility
 
-			if err := row.Scan(&created); err != nil {
+			if err := row.Scan(&created, &dkimStatus); err != nil {
 				logger.Log().Errorf("[db] %s", err.Error())
 				return
 			}
 
 			logger.Log().Debugf("[db] %s does not contain a date header, using received datetime", id)
 			date = time.UnixMilli(int64(created))
+		}); err != nil {
+			logger.Log().Errorf("[db] %s", err.Error())
+		}
+	} else {
+		// read DKIMStatus from DB
+		q := sqlf.From(tenant("mailbox")).
+			Select(`DKIMStatus`).
+			Where(`ID = ?`, id)
+
+		if err := q.QueryAndClose(context.TODO(), db, func(row *sql.Rows) {
+			if err := row.Scan(&dkimStatus); err != nil {
+				logger.Log().Errorf("[db] %s", err.Error())
+				return
+			}
 		}); err != nil {
 			logger.Log().Errorf("[db] %s", err.Error())
 		}
@@ -388,10 +407,19 @@ func GetMessage(id string) (*Message, error) {
 		Size:       uint64(len(raw)),
 		Text:       env.Text,
 		Username:   meta.Username,
+		DKIMStatus: dkimStatus,
 	}
 	obj.HTML = env.HTML
 	obj.Inline = []Attachment{}
 	obj.Attachments = []Attachment{}
+
+	// backward compatibility: if DKIMStatus is empty (old data), compute it and update DB
+	if obj.DKIMStatus == "" {
+		dkimResult := dkim.Verify(raw)
+		obj.DKIMStatus = dkimResult.Status
+		// update DB for future requests
+		_, _ = db.Exec(fmt.Sprintf(`UPDATE %s SET DKIMStatus = ? WHERE ID = ?`, tenant("mailbox")), obj.DKIMStatus, id)
+	}
 
 	for _, i := range env.Inlines {
 		if i.FileName != "" || i.ContentID != "" {
@@ -424,9 +452,6 @@ func GetMessage(id string) (*Message, error) {
 		}
 		obj.ListUnsubscribe.HeaderPost = env.GetHeader("List-Unsubscribe-Post")
 	}
-
-	dkimResult := dkim.Verify(raw)
-	obj.DKIMStatus = dkimResult.Status
 
 	var totalAttachmentSize uint64
 	for _, a := range obj.Attachments {
@@ -901,4 +926,76 @@ func GetMetadata(id string) (Metadata, error) {
 		return Metadata{}, err
 	}
 	return meta, nil
+}
+
+// rebuildAllSearchText rebuilds the SearchText column for all messages,
+// applying Chinese bigram tokenization for improved Chinese search.
+// This is called during data migration for existing databases.
+func rebuildAllSearchText() error {
+	ids := []string{}
+
+	// get all message IDs
+	rows, err := db.Query(fmt.Sprintf("SELECT ID FROM %s ORDER BY Created DESC", tenant("mailbox")))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			logger.Log().Errorf("[db] %s", err.Error())
+			continue
+		}
+		ids = append(ids, id)
+	}
+
+	logger.Log().Infof("[db] rebuilding search index for %d messages", len(ids))
+
+	parser := enmime.NewParser(enmime.DisableCharacterDetection(true))
+
+	// process in batches of 100
+	batchSize := 100
+	for i := 0; i < len(ids); i += batchSize {
+		end := i + batchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[i:end]
+
+		tx, err := db.BeginTx(context.Background(), nil)
+		if err != nil {
+			return err
+		}
+
+		for _, id := range batch {
+			raw, err := GetMessageRaw(id)
+			if err != nil {
+				logger.Log().Warnf("[db] skipping message %s: %s", id, err.Error())
+				continue
+			}
+
+			env, err := parser.ReadEnvelope(bytes.NewReader(raw))
+			if err != nil {
+				logger.Log().Warnf("[db] skipping message %s: %s", id, err.Error())
+				continue
+			}
+
+			searchText := createSearchText(env)
+
+			_, err = tx.Exec(fmt.Sprintf("UPDATE %s SET SearchText = ? WHERE ID = ?", tenant("mailbox")), searchText, id)
+			if err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+
+		logger.Log().Debugf("[db] rebuilt search index for %d/%d messages", end, len(ids))
+	}
+
+	return nil
 }

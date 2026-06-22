@@ -473,32 +473,30 @@ func searchQueryBuilder(searchString, timezone string) *sqlf.Stmt {
 				q.Where("Attachments > 0")
 			}
 		} else if strings.HasPrefix(lw, "after:") {
-			w = strings.ToUpper(cleanString(w[6:]))
+			w = cleanString(w[6:])
 			if w != "" {
-				t, err := dateparse.ParseIn(w, loc)
+				ts, err := parseDateQueryParam(w, loc)
 				if err != nil {
 					logger.Log().Warnf("ignoring invalid after: date \"%s\"", w)
 				} else {
-					timestamp := t.UnixMilli()
 					if exclude {
-						q.Where(`m.Created <= ?`, timestamp)
+						q.Where(`m.Created <= ?`, ts)
 					} else {
-						q.Where(`m.Created >= ?`, timestamp)
+						q.Where(`m.Created >= ?`, ts)
 					}
 				}
 			}
 		} else if strings.HasPrefix(lw, "before:") {
-			w = strings.ToUpper(cleanString(w[7:]))
+			w = cleanString(w[7:])
 			if w != "" {
-				t, err := dateparse.ParseIn(w, loc)
+				ts, err := parseDateQueryParam(w, loc)
 				if err != nil {
 					logger.Log().Warnf("ignoring invalid before: date \"%s\"", w)
 				} else {
-					timestamp := t.UnixMilli()
 					if exclude {
-						q.Where(`m.Created >= ?`, timestamp)
+						q.Where(`m.Created >= ?`, ts)
 					} else {
-						q.Where(`m.Created <= ?`, timestamp)
+						q.Where(`m.Created <= ?`, ts)
 					}
 				}
 			}
@@ -519,11 +517,12 @@ func searchQueryBuilder(searchString, timezone string) *sqlf.Stmt {
 				q.Where("Size < ?", size)
 			}
 		} else {
-			// search text
+			// search text - apply Chinese bigram tokenization for consistency
+			processedTerm := chineseBigramTokenize(cleanString(escPercentChar(strings.ToLower(w))))
 			if exclude {
-				q.Where("SearchText NOT LIKE ?", "%"+cleanString(escPercentChar(strings.ToLower(w)))+"%")
+				q.Where("SearchText NOT LIKE ?", "%"+processedTerm+"%")
 			} else {
-				q.Where("SearchText LIKE ?", "%"+cleanString(escPercentChar(strings.ToLower(w)))+"%")
+				q.Where("SearchText LIKE ?", "%"+processedTerm+"%")
 			}
 		}
 	}
@@ -565,4 +564,24 @@ func sizeToBytes(v string) uint64 {
 	}
 
 	return 0
+}
+
+// parseDateQueryParam parses a date string, supporting both Unix timestamps (seconds or milliseconds)
+// and common date formats via dateparse. Returns UnixMilli timestamp.
+func parseDateQueryParam(s string, loc *time.Location) (int64, error) {
+	// first try to parse as Unix timestamp (digits only)
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n > 1e12 {
+			// milliseconds (13+ digits)
+			return n, nil
+		}
+		// seconds (10 digits)
+		return n * 1000, nil
+	}
+	// fall back to dateparse for string formats
+	t, err := dateparse.ParseIn(s, loc)
+	if err != nil {
+		return 0, err
+	}
+	return t.UnixMilli(), nil
 }

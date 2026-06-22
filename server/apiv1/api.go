@@ -63,35 +63,52 @@ func getStartLimit(req *http.Request) (start int, beforeTS int64, sinceTS int64,
 
 	b := req.URL.Query().Get("before")
 	if b != "" {
-		t, err := dateparse.ParseLocal(b)
-		if err != nil {
-			logger.Log().Warnf("ignoring invalid before: date \"%s\"", b)
+		if t, err := parseDateParam(b); err == nil {
+			beforeTS = t
 		} else {
-			beforeTS = t.UnixMilli()
+			logger.Log().Warnf("ignoring invalid before: date \"%s\"", b)
 		}
 	}
 
 	since := req.URL.Query().Get("since")
 	if since != "" {
-		t, err := dateparse.ParseLocal(since)
-		if err != nil {
-			logger.Log().Warnf("ignoring invalid since: date \"%s\"", since)
+		if t, err := parseDateParam(since); err == nil {
+			sinceTS = t
 		} else {
-			sinceTS = t.UnixMilli()
+			logger.Log().Warnf("ignoring invalid since: date \"%s\"", since)
 		}
 	}
 
 	until := req.URL.Query().Get("until")
 	if until != "" {
-		t, err := dateparse.ParseLocal(until)
-		if err != nil {
-			logger.Log().Warnf("ignoring invalid until: date \"%s\"", until)
+		if t, err := parseDateParam(until); err == nil {
+			untilTS = t
 		} else {
-			untilTS = t.UnixMilli()
+			logger.Log().Warnf("ignoring invalid until: date \"%s\"", until)
 		}
 	}
 
 	return start, beforeTS, sinceTS, untilTS, limit
+}
+
+// parseDateParam parses a date string, supporting both Unix timestamps (seconds or milliseconds)
+// and common date formats via dateparse. Returns UnixMilli timestamp.
+func parseDateParam(s string) (int64, error) {
+	// first try to parse as Unix timestamp (digits only)
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n > 1e12 {
+			// milliseconds (13+ digits)
+			return n, nil
+		}
+		// seconds (10 digits)
+		return n * 1000, nil
+	}
+	// fall back to dateparse for string formats
+	t, err := dateparse.ParseLocal(s)
+	if err != nil {
+		return 0, err
+	}
+	return t.UnixMilli(), nil
 }
 
 // GetOptions returns a blank response

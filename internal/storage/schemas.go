@@ -161,4 +161,15 @@ func dataMigrations() {
 	if SettingGet("DeletedSize") == "" {
 		_ = SettingPut("DeletedSize", "0")
 	}
+
+	// rebuild SearchText for Chinese bigram tokenization support (1.25.0 migration)
+	if SettingGet("SearchTextRebuildV2") == "" {
+		logger.Log().Info("[db] rebuilding search index for Chinese search support, this may take a while...")
+		if err := rebuildAllSearchText(); err != nil {
+			logger.Log().Errorf("[db] failed to rebuild search index: %s", err.Error())
+		} else {
+			_ = SettingPut("SearchTextRebuildV2", "1")
+			logger.Log().Info("[db] search index rebuild completed")
+		}
+	}
 }

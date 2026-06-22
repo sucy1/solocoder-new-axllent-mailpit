@@ -68,9 +68,58 @@ func createSearchText(env *enmime.Envelope) string {
 		_, _ = b.WriteString(a.FileName + " ")
 	}
 
-	d := cleanString(b.String())
+	rawText := cleanString(b.String())
 
-	return d
+	// Apply Chinese bigram tokenization for better Chinese search
+	return chineseBigramTokenize(rawText)
+}
+
+// chineseBigramTokenize performs bigram (2-character) tokenization on Chinese characters
+// to improve Chinese search accuracy. Non-Chinese text is left as-is.
+// E.g., "你好世界" becomes "你好 好世 世界"
+func chineseBigramTokenize(s string) string {
+	var result strings.Builder
+	var chineseBuf strings.Builder
+
+	flushChinese := func() {
+		chinese := chineseBuf.String()
+		chineseBuf.Reset()
+		runes := []rune(chinese)
+		if len(runes) == 1 {
+			result.WriteRune(runes[0])
+			result.WriteRune(' ')
+		} else if len(runes) > 1 {
+			for i := 0; i < len(runes)-1; i++ {
+				result.WriteRune(runes[i])
+				result.WriteRune(runes[i+1])
+				result.WriteRune(' ')
+			}
+		}
+	}
+
+	for _, r := range s {
+		if isChineseChar(r) {
+			chineseBuf.WriteRune(r)
+		} else {
+			if chineseBuf.Len() > 0 {
+				flushChinese()
+			}
+			result.WriteRune(r)
+		}
+	}
+
+	if chineseBuf.Len() > 0 {
+		flushChinese()
+	}
+
+	return strings.TrimSpace(result.String())
+}
+
+// isChineseChar checks if a rune is a Chinese character (CJK Unified Ideographs)
+func isChineseChar(r rune) bool {
+	return (r >= '\u4e00' && r <= '\u9fff') || // CJK Unified Ideographs
+		(r >= '\u3400' && r <= '\u4dbf') || // CJK Unified Ideographs Extension A
+		(r >= 0x20000 && r <= 0x2a6df) // CJK Unified Ideographs Extension B
 }
 
 // CleanString removes unwanted characters from stored search text and search queries
