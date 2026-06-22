@@ -517,8 +517,8 @@ func searchQueryBuilder(searchString, timezone string) *sqlf.Stmt {
 				q.Where("Size < ?", size)
 			}
 		} else {
-			// search text - apply Chinese bigram tokenization for consistency
-			processedTerm := chineseBigramTokenize(cleanString(escPercentChar(strings.ToLower(w))))
+			// search text - apply Chinese search tokenization for consistency
+			processedTerm := chineseSearchTokenize(escPercentChar(strings.ToLower(w)))
 			if exclude {
 				q.Where("SearchText NOT LIKE ?", "%"+processedTerm+"%")
 			} else {
@@ -569,14 +569,25 @@ func sizeToBytes(v string) uint64 {
 // parseDateQueryParam parses a date string, supporting both Unix timestamps (seconds or milliseconds)
 // and common date formats via dateparse. Returns UnixMilli timestamp.
 func parseDateQueryParam(s string, loc *time.Location) (int64, error) {
+	// Reasonable timestamp bounds: year 2000 to 2100
+	// Seconds: 946684800 to 4102444800 (10 digits)
+	// Milliseconds: 946684800000 to 4102444800000 (13 digits)
+	const minSeconds = 946684800
+	const maxSeconds = 4102444800
+	const minMillis = minSeconds * 1000
+	const maxMillis = maxSeconds * 1000
+
 	// first try to parse as Unix timestamp (digits only)
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-		if n > 1e12 {
-			// milliseconds (13+ digits)
+		if n >= minMillis && n <= maxMillis {
+			// milliseconds (13 digits, within reasonable range)
 			return n, nil
 		}
-		// seconds (10 digits)
-		return n * 1000, nil
+		if n >= minSeconds && n <= maxSeconds {
+			// seconds (10 digits, within reasonable range)
+			return n * 1000, nil
+		}
+		// number is outside reasonable timestamp range, fall through to dateparse
 	}
 	// fall back to dateparse for string formats
 	t, err := dateparse.ParseIn(s, loc)

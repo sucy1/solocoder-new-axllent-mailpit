@@ -162,13 +162,13 @@ func dataMigrations() {
 		_ = SettingPut("DeletedSize", "0")
 	}
 
-	// rebuild SearchText for Chinese bigram tokenization support (1.25.0 migration)
-	if SettingGet("SearchTextRebuildV2") == "" {
-		logger.Log().Info("[db] rebuilding search index for Chinese search support, this may take a while...")
+	// rebuild SearchText for Chinese ngram tokenization support (unigram + bigram, 1.25.0 migration v3)
+	if SettingGet("SearchTextRebuildV3") == "" {
+		logger.Log().Info("[db] rebuilding search index for Chinese search support (unigram+bigram), this may take a while...")
 		if err := rebuildAllSearchText(); err != nil {
 			logger.Log().Errorf("[db] failed to rebuild search index: %s", err.Error())
 		} else {
-			_ = SettingPut("SearchTextRebuildV2", "1")
+			_ = SettingPut("SearchTextRebuildV3", "1")
 			logger.Log().Info("[db] search index rebuild completed")
 		}
 	}

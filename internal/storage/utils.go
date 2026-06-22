@@ -70,14 +70,15 @@ func createSearchText(env *enmime.Envelope) string {
 
 	rawText := cleanString(b.String())
 
-	// Apply Chinese bigram tokenization for better Chinese search
-	return chineseBigramTokenize(rawText)
+	// Apply Chinese ngram tokenization for better Chinese search
+	return chineseNgramTokenize(rawText)
 }
 
-// chineseBigramTokenize performs bigram (2-character) tokenization on Chinese characters
-// to improve Chinese search accuracy. Non-Chinese text is left as-is.
-// E.g., "你好世界" becomes "你好 好世 世界"
-func chineseBigramTokenize(s string) string {
+// chineseNgramTokenize performs unigram + bigram tokenization on Chinese characters
+// to support both single-char and multi-char Chinese searches.
+// Non-Chinese text is left as-is.
+// E.g., "你好世界" becomes "你 好 世 界 你好 好世 世界"
+func chineseNgramTokenize(s string) string {
 	var result strings.Builder
 	var chineseBuf strings.Builder
 
@@ -85,10 +86,15 @@ func chineseBigramTokenize(s string) string {
 		chinese := chineseBuf.String()
 		chineseBuf.Reset()
 		runes := []rune(chinese)
-		if len(runes) == 1 {
-			result.WriteRune(runes[0])
+
+		// Add unigrams (single chars) for single-char search support
+		for _, r := range runes {
+			result.WriteRune(r)
 			result.WriteRune(' ')
-		} else if len(runes) > 1 {
+		}
+
+		// Add bigrams for multi-char search accuracy
+		if len(runes) > 1 {
 			for i := 0; i < len(runes)-1; i++ {
 				result.WriteRune(runes[i])
 				result.WriteRune(runes[i+1])
@@ -113,6 +119,43 @@ func chineseBigramTokenize(s string) string {
 	}
 
 	return strings.TrimSpace(result.String())
+}
+
+// chineseSearchTokenize tokenizes a Chinese search term appropriately.
+// - Single char: return as-is (matches unigram)
+// - Multiple chars: convert to bigrams for exact phrase matching
+func chineseSearchTokenize(s string) string {
+	// First clean the input
+	s = cleanString(s)
+
+	var hasChinese bool
+	for _, r := range s {
+		if isChineseChar(r) {
+			hasChinese = true
+			break
+		}
+	}
+
+	// No Chinese, return as-is
+	if !hasChinese {
+		return s
+	}
+
+	// Extract only Chinese runes to determine length
+	var chineseRunes []rune
+	for _, r := range s {
+		if isChineseChar(r) {
+			chineseRunes = append(chineseRunes, r)
+		}
+	}
+
+	// Single Chinese char: return as-is for unigram matching
+	if len(chineseRunes) == 1 {
+		return string(chineseRunes)
+	}
+
+	// Multiple Chinese chars: use ngram tokenization (uni + bi)
+	return chineseNgramTokenize(s)
 }
 
 // isChineseChar checks if a rune is a Chinese character (CJK Unified Ideographs)

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
+	"time"
 )
 
 type VerifyResult struct {
@@ -26,6 +28,64 @@ const (
 	StatusTempError = "temperror"
 	StatusPermError = "permerror"
 )
+
+type dnsCacheEntry struct {
+	key       *rsa.PublicKey
+	err       error
+	expiresAt time.Time
+}
+
+var (
+	dnsCache   = make(map[string]dnsCacheEntry)
+	dnsCacheMu sync.Mutex
+	cacheTTL   = 1 * time.Hour // cache DNS results for 1 hour
+)
+
+// getPublicKeyCached retrieves the DKIM public key with DNS caching
+func getPublicKeyCached(selector, domain string) (*rsa.PublicKey, error) {
+	cacheKey := selector + ":" + domain
+
+	dnsCacheMu.Lock()
+	entry, found := dnsCache[cacheKey]
+	dnsCacheMu.Unlock()
+
+	if found && time.Now().Before(entry.expiresAt) {
+		return entry.key, entry.err
+	}
+
+	key, err := getPublicKey(selector, domain)
+
+	dnsCacheMu.Lock()
+	dnsCache[cacheKey] = dnsCacheEntry{
+		key:       key,
+		err:       err,
+		expiresAt: time.Now().Add(cacheTTL),
+	}
+	// prune old entries occasionally
+	if len(dnsCache) > 1000 {
+		pruneDNSCache()
+	}
+	dnsCacheMu.Unlock()
+
+	return key, err
+}
+
+// pruneDNSCache removes expired entries from the cache
+func pruneDNSCache() {
+	now := time.Now()
+	for k, v := range dnsCache {
+		if now.After(v.expiresAt) {
+			delete(dnsCache, k)
+		}
+	}
+}
+
+// ClearDNSCache clears the DNS cache (useful for testing)
+func ClearDNSCache() {
+	dnsCacheMu.Lock()
+	dnsCache = make(map[string]dnsCacheEntry)
+	dnsCacheMu.Unlock()
+}
 
 func Verify(rawMsg []byte) VerifyResult {
 	headers := extractDKIMHeaders(rawMsg)
@@ -130,7 +190,7 @@ func verifySignature(rawMsg []byte, sigHeader string) VerifyResult {
 		return VerifyResult{Status: StatusPermError, Detail: "invalid base64 in bh= tag", Domain: domain, Selector: selector}
 	}
 
-	pubKey, err := getPublicKey(selector, domain)
+	pubKey, err := getPublicKeyCached(selector, domain)
 	if err != nil {
 		return VerifyResult{Status: StatusTempError, Detail: fmt.Sprintf("DNS lookup failed: %s", err.Error()), Domain: domain, Selector: selector}
 	}
