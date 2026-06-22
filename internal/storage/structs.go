@@ -9,43 +9,26 @@ import (
 //
 // swagger:model Message
 type Message struct {
-	// Database ID
 	ID string
-	// Message ID
 	MessageID string
-	// From address
 	From *mail.Address
-	// To addresses
 	To []*mail.Address
-	// Cc addresses
 	Cc []*mail.Address
-	// Bcc addresses
 	Bcc []*mail.Address
-	// ReplyTo addresses
 	ReplyTo []*mail.Address
-	// Return-Path
 	ReturnPath string
-	// Message subject
 	Subject string
-	// List-Unsubscribe header information
 	ListUnsubscribe ListUnsubscribe
-	// Message RFC3339Nano date & time (if set), else date & time received
-	// ([extended RFC3339](https://tools.ietf.org/html/rfc3339#section-5.6) format with optional nano seconds)
 	Date time.Time
-	// Message tags
 	Tags []string
-	// Username used for authentication (if provided) with the SMTP or Send API
 	Username string
-	// Message body text
 	Text string
-	// Message body HTML
 	HTML string
-	// Message size in bytes
 	Size uint64
-	// Inline message attachments
 	Inline []Attachment
-	// Message attachments
 	Attachments []Attachment
+	DKIMStatus string
+	AttachmentSizeWarning bool
 }
 
 // Attachment struct for inline images and attachments

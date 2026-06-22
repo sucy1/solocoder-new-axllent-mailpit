@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/axllent/mailpit/config"
+	"github.com/axllent/mailpit/internal/dkim"
 	"github.com/axllent/mailpit/internal/logger"
 	"github.com/axllent/mailpit/internal/shortuuid"
 	"github.com/axllent/mailpit/internal/tools"
@@ -212,7 +213,7 @@ func Store(body *[]byte, username *string) (string, error) {
 
 // List returns a subset of messages from the mailbox,
 // sorted latest to oldest
-func List(start int, beforeTS int64, limit int) ([]MessageSummary, error) {
+func List(start int, beforeTS int64, sinceTS int64, untilTS int64, limit int) ([]MessageSummary, error) {
 	results := []MessageSummary{}
 	tsStart := time.Now()
 
@@ -226,6 +227,14 @@ func List(start int, beforeTS int64, limit int) ([]MessageSummary, error) {
 
 	if beforeTS > 0 {
 		q = q.Where("Created < ?", beforeTS)
+	}
+
+	if sinceTS > 0 {
+		q = q.Where("Created >= ?", sinceTS)
+	}
+
+	if untilTS > 0 {
+		q = q.Where("Created <= ?", untilTS)
 	}
 
 	if err := q.QueryAndClose(context.TODO(), db, func(row *sql.Rows) {
@@ -416,6 +425,15 @@ func GetMessage(id string) (*Message, error) {
 		obj.ListUnsubscribe.HeaderPost = env.GetHeader("List-Unsubscribe-Post")
 	}
 
+	dkimResult := dkim.Verify(raw)
+	obj.DKIMStatus = dkimResult.Status
+
+	var totalAttachmentSize uint64
+	for _, a := range obj.Attachments {
+		totalAttachmentSize += a.Size
+	}
+	obj.AttachmentSizeWarning = totalAttachmentSize > 10*1024*1024
+
 	// mark message as read
 	if err := MarkRead([]string{id}); err != nil {
 		return &obj, err
@@ -540,12 +558,12 @@ func LatestID(r *http.Request) (string, error) {
 
 	search := strings.TrimSpace(r.URL.Query().Get("query"))
 	if search != "" {
-		messages, _, err = Search(search, r.URL.Query().Get("tz"), 0, 0, 1)
+		messages, _, err = Search(search, r.URL.Query().Get("tz"), 0, 0, 0, 0, 1)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		messages, err = List(0, 0, 1)
+		messages, err = List(0, 0, 0, 0, 1)
 		if err != nil {
 			return "", err
 		}

@@ -44,10 +44,12 @@ func httpJSONError(w http.ResponseWriter, msg string) {
 }
 
 // Get the start and limit based on query params. Defaults to 0, 50
-func getStartLimit(req *http.Request) (start int, beforeTS int64, limit int) {
+func getStartLimit(req *http.Request) (start int, beforeTS int64, sinceTS int64, untilTS int64, limit int) {
 	start = 0
 	limit = 50
-	beforeTS = 0 // timestamp
+	beforeTS = 0
+	sinceTS = 0
+	untilTS = 0
 
 	s := req.URL.Query().Get("start")
 	if n, err := strconv.Atoi(s); err == nil && n > 0 {
@@ -69,7 +71,27 @@ func getStartLimit(req *http.Request) (start int, beforeTS int64, limit int) {
 		}
 	}
 
-	return start, beforeTS, limit
+	since := req.URL.Query().Get("since")
+	if since != "" {
+		t, err := dateparse.ParseLocal(since)
+		if err != nil {
+			logger.Log().Warnf("ignoring invalid since: date \"%s\"", since)
+		} else {
+			sinceTS = t.UnixMilli()
+		}
+	}
+
+	until := req.URL.Query().Get("until")
+	if until != "" {
+		t, err := dateparse.ParseLocal(until)
+		if err != nil {
+			logger.Log().Warnf("ignoring invalid until: date \"%s\"", until)
+		} else {
+			untilTS = t.UnixMilli()
+		}
+	}
+
+	return start, beforeTS, sinceTS, untilTS, limit
 }
 
 // GetOptions returns a blank response

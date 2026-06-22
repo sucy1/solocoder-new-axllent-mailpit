@@ -77,7 +77,7 @@ func TestSearch(t *testing.T) {
 
 			search := uniqueSearches[searchIdx]
 
-			summaries, _, err := Search(search, "", 0, 0, 100)
+			summaries, _, err := Search(search, "", 0, 0, 0, 0, 100)
 			if err != nil {
 				t.Log("error ", err)
 				t.Fail()
@@ -93,7 +93,7 @@ func TestSearch(t *testing.T) {
 		}
 
 		// search something that will return 200 results
-		summaries, _, err := Search("This is the email body", "", 0, 0, testRuns)
+		summaries, _, err := Search("This is the email body", "", 0, 0, 0, 0, testRuns)
 		if err != nil {
 			t.Log("error ", err)
 			t.Fail()
@@ -127,7 +127,7 @@ func TestSearchDelete100(t *testing.T) {
 			}
 		}
 
-		_, total, err := Search("from:sender@example.com", "", 0, 0, 100)
+		_, total, err := Search("from:sender@example.com", "", 0, 0, 0, 0, 100)
 		if err != nil {
 			t.Log("error ", err)
 			t.Fail()
@@ -140,7 +140,7 @@ func TestSearchDelete100(t *testing.T) {
 			t.Fail()
 		}
 
-		_, total, err = Search("from:sender@example.com", "", 0, 0, 100)
+		_, total, err = Search("from:sender@example.com", "", 0, 0, 0, 0, 100)
 		if err != nil {
 			t.Log("error ", err)
 			t.Fail()
@@ -164,7 +164,7 @@ func TestSearchDelete1100(t *testing.T) {
 		}
 	}
 
-	_, total, err := Search("from:sender@example.com", "", 0, 0, 100)
+	_, total, err := Search("from:sender@example.com", "", 0, 0, 0, 0, 100)
 	if err != nil {
 		t.Log("error ", err)
 		t.Fail()
@@ -177,7 +177,7 @@ func TestSearchDelete1100(t *testing.T) {
 		t.Fail()
 	}
 
-	_, total, err = Search("from:sender@example.com", "", 0, 0, 100)
+	_, total, err = Search("from:sender@example.com", "", 0, 0, 0, 0, 100)
 	if err != nil {
 		t.Log("error ", err)
 		t.Fail()

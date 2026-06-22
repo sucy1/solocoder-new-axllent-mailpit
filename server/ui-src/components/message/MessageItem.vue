@@ -332,6 +332,12 @@ export default {
 
 <template>
 	<div v-if="message" id="message-view" class="px-2 px-md-0 mh-100">
+		<div v-if="message.AttachmentSizeWarning" class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+			<i class="bi bi-exclamation-triangle-fill me-2"></i>
+			<div>
+				Total attachment size exceeds 10 MB. Large attachments may cause delivery or storage issues.
+			</div>
+		</div>
 		<div class="row w-100">
 			<div class="col-md">
 				<table class="messageHeaders">
@@ -455,6 +461,29 @@ export default {
 							</th>
 							<td class="small">
 								{{ message.Username }}
+							</td>
+						</tr>
+						<tr v-if="message.DKIMStatus && message.DKIMStatus !== 'none'" class="small">
+							<th class="small">DKIM</th>
+							<td class="small">
+								<span
+									v-if="message.DKIMStatus === 'pass'"
+									class="text-success fw-bold"
+								>
+									<i class="bi bi-check-circle-fill me-1"></i>Pass
+								</span>
+								<span
+									v-else-if="message.DKIMStatus === 'fail'"
+									class="text-danger fw-bold"
+								>
+									<i class="bi bi-x-circle-fill me-1"></i>Fail
+								</span>
+								<span
+									v-else
+									class="text-muted"
+								>
+									<i class="bi bi-exclamation-circle me-1"></i>{{ message.DKIMStatus }}
+								</span>
 							</td>
 						</tr>
 						<tr class="small">

@@ -56,9 +56,9 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 	//	  200: MessagesSummaryResponse
 	//    400: ErrorResponse
 
-	start, beforeTS, limit := getStartLimit(r)
+	start, beforeTS, sinceTS, untilTS, limit := getStartLimit(r)
 
-	messages, err := storage.List(start, beforeTS, limit)
+	messages, err := storage.List(start, beforeTS, sinceTS, untilTS, limit)
 	if err != nil {
 		httpError(w, err.Error())
 		return
@@ -228,9 +228,9 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	start, beforeTS, limit := getStartLimit(r)
+	start, beforeTS, sinceTS, untilTS, limit := getStartLimit(r)
 
-	messages, results, err := storage.Search(search, r.URL.Query().Get("tz"), start, beforeTS, limit)
+	messages, results, err := storage.Search(search, r.URL.Query().Get("tz"), start, beforeTS, sinceTS, untilTS, limit)
 	if err != nil {
 		httpError(w, err.Error())
 		return
